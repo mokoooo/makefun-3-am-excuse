@@ -1,62 +1,67 @@
 #!/usr/bin/env python3
-"""Write the 3 AM Excuse entry to entry.txt.
+"""The 3 AM Excuse: one line, delivered to entry.txt.
 
-The excuse lives in LINE below, in the voice of the hardware wallet
-itself. The program validates it, then writes it (plus one trailing
-newline) atomically into the output directory named by
-MAKEFUN_OUTPUT_DIR (default /output).
+A hardware wallet explains why it will not sign. This module keeps
+that explanation in EXCUSE, sanity-checks it, and drops it into the
+folder the harness names (MAKEFUN_OUTPUT_DIR, else /output).
 """
 
 import os
 import sys
 import tempfile
+from pathlib import Path
 
-LINE = "Denied: at 3 AM the scammers clock in, your brain clocks out, and I'm the only one on shift still reading the whole destination address."
-
-
-def validate(line):
-    """Return an error message, or None when the line is acceptable."""
-    if not isinstance(line, str):
-        return "line must be text"
-    if len(line) < 1 or len(line) > 200:
-        return "line must be between 1 and 200 characters"
-    if not line.strip():
-        return "line must not be blank"
-    if "\n" in line or "\r" in line:
-        return "line must be a single line with no newline characters"
-    return None
+EXCUSE = "Denied: at 3 AM the scammers clock in, your brain clocks out, and I'm the only one on shift still reading the whole destination address."
+LIMIT = 200
 
 
-def main():
-    problem = validate(LINE)
-    if problem is not None:
-        print("error: " + problem, file=sys.stderr)
+def problems_with(text):
+    """List everything wrong with the candidate line; [] means fine."""
+    found = []
+    if not isinstance(text, str):
+        return ["excuse is not text"]
+    if not 1 <= len(text) <= LIMIT:
+        found.append("excuse must be 1 to %d characters" % LIMIT)
+    if text.strip() == "":
+        found.append("excuse must not be blank")
+    for mark in ("\n", "\r"):
+        if mark in text:
+            found.append("excuse must stay on one line")
+            break
+    return found
+
+
+def destination():
+    """Where entry.txt goes; a blank override means the default."""
+    named = os.environ.get("MAKEFUN_OUTPUT_DIR", "").strip()
+    return Path(named) if named else Path("/output")
+
+
+def deliver():
+    issues = problems_with(EXCUSE)
+    if issues:
+        for issue in issues:
+            print("refusing to write entry: " + issue, file=sys.stderr)
         return 1
-
-    out_dir = (os.environ.get("MAKEFUN_OUTPUT_DIR") or "").strip() or "/output"
-    os.makedirs(out_dir, exist_ok=True)
-
-    payload = (LINE + "\n").encode("utf-8")
-    target = os.path.join(out_dir, "entry.txt")
-
-    fd, tmp_path = tempfile.mkstemp(prefix=".entry-", dir=out_dir)
+    folder = destination()
+    folder.mkdir(parents=True, exist_ok=True)
+    final = folder / "entry.txt"
+    handle, spare = tempfile.mkstemp(prefix=".excuse-", dir=str(folder))
     try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(tmp_path, 0o644)
-        os.replace(tmp_path, target)
+        with os.fdopen(handle, "wb") as stream:
+            stream.write((EXCUSE + "\n").encode("utf-8"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(spare, 0o644)
+        os.replace(spare, final)
     except BaseException:
         try:
-            os.unlink(tmp_path)
+            os.unlink(spare)
         except OSError:
             pass
         raise
-
-    os.chmod(target, 0o644)
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(deliver())
