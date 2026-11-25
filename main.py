@@ -11,6 +11,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+# The wallet speaks for itself below: one line, and no signature after hours.
 EXCUSE = "Denied: at 3 AM the scammers clock in, your brain clocks out, and I'm the only one on shift still reading the whole destination address."
 LIMIT = 200
 
